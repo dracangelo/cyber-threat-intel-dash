@@ -72,27 +72,6 @@ Companies love **visual threat intelligence dashboards**.
 
 ---
 
-# 4. Real-Time Alert System
-
-Add alerting when certain thresholds are met.
-
-Examples:
-
-* IP with **risk score > 80**
-* Domain detected by **5+ AV engines**
-* Sudden spike in malicious IPs
-
-Alert channels:
-
-* Slack
-* Email
-* Discord webhook
-* Telegram bot
-
-Shows **SOC-style monitoring capability**.
-
----
-
 # 5. Historical Threat Trends
 
 Store data in a database and visualize trends.

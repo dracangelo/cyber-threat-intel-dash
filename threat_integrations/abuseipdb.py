@@ -1,5 +1,6 @@
 import requests
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -20,13 +21,15 @@ class AbuseIPDBClient:
         }
 
         try:
+            start_time = time.time()
             response = requests.get(url, headers=self.headers, params=params, timeout=10)
+            response_time = time.time() - start_time
             if response.status_code == 429:
-                return {"online": True, "warning": "rate_limited"}
+                return {"online": True, "warning": "rate_limited", "response_time": response_time}
             response.raise_for_status()
-            return {"online": True}
+            return {"online": True, "response_time": response_time}
         except requests.exceptions.RequestException as e:
-            return {"online": False, "error": str(e)}
+            return {"online": False, "error": str(e), "response_time": None}
     
     def check_ip(self, ip_address: str, max_age_in_days: int = 90) -> Dict:
         """Check if an IP address is malicious"""

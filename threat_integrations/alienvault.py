@@ -1,5 +1,6 @@
 import requests
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -14,13 +15,15 @@ class AlienVaultClient:
     def test_connection(self) -> Dict:
         url = f"{self.base_url}/indicators/IPv4/8.8.8.8/general"
         try:
+            start_time = time.time()
             response = requests.get(url, headers=self.headers, timeout=15)
+            response_time = time.time() - start_time
             if response.status_code == 429:
-                return {"online": True, "warning": "rate_limited"}
+                return {"online": True, "warning": "rate_limited", "response_time": response_time}
             response.raise_for_status()
-            return {"online": True}
+            return {"online": True, "response_time": response_time}
         except requests.exceptions.RequestException as e:
-            return {"online": False, "error": str(e)}
+            return {"online": False, "error": str(e), "response_time": None}
     
     def get_pulses(self, modified_since: Optional[str] = None, limit: int = 20) -> Dict:
         """Get recent threat pulses"""

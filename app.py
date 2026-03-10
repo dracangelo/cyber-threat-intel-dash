@@ -5,7 +5,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
+import io
+import csv
+from typing import Optional
+import uuid
+import csv
+import io
 from data_aggregator import ThreatDataAggregator
+from flask import jsonify
 
 # Initialize the Dash app with a modern theme
 app = dash.Dash(__name__, 
@@ -17,8 +24,32 @@ app = dash.Dash(__name__,
 )
 app.title = "Cyber Threat Intelligence Dashboard"
 
+# API Routes
+@app.server.route('/api/threat/<indicator_type>/<path:value>')
+def api_threat(indicator_type, value):
+    result = aggregator.search_indicators(value, indicator_type)
+    return jsonify(result)
+
 # Initialize data aggregator
 aggregator = ThreatDataAggregator()
+
+# Minimal ISO-2 to ISO-3 mapping for map visualization
+ISO2_TO_ISO3 = {
+    "US": "USA", "GB": "GBR", "DE": "DEU", "FR": "FRA", "CN": "CHN", "RU": "RUS",
+    "IN": "IND", "BR": "BRA", "CA": "CAN", "AU": "AUS", "JP": "JPN", "KR": "KOR",
+    "ZA": "ZAF", "NG": "NGA", "KE": "KEN", "EG": "EGY", "TR": "TUR", "UA": "UKR",
+    "PL": "POL", "ES": "ESP", "IT": "ITA", "NL": "NLD", "SE": "SWE", "NO": "NOR",
+    "FI": "FIN", "DK": "DNK", "BE": "BEL", "CH": "CHE", "AT": "AUT", "MX": "MEX",
+    "AR": "ARG", "CL": "CHL", "CO": "COL", "PE": "PER", "VE": "VEN", "SA": "SAU",
+    "AE": "ARE", "IL": "ISR", "IR": "IRN", "PK": "PAK", "BD": "BGD", "ID": "IDN",
+    "PH": "PHL", "VN": "VNM", "TH": "THA", "MY": "MYS", "SG": "SGP", "NZ": "NZL",
+    "CZ": "CZE", "RO": "ROU", "HU": "HUN", "GR": "GRC", "PT": "PRT", "IE": "IRL"
+}
+
+def _iso2_to_iso3(code: str) -> Optional[str]:
+    if not code:
+        return None
+    return ISO2_TO_ISO3.get(code.upper())
 
 # Define the modern layout
 app.layout = dbc.Container([
@@ -137,6 +168,42 @@ app.layout = dbc.Container([
             })
         ], width=3, className="mb-3")
     ], className="mb-4"),
+
+    # Risk and Health Row
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.Div([
+                        html.I(className="fas fa-shield-virus me-2", style={"color": "#ff6b6b", "fontSize": "1.5rem"}),
+                        html.H6("Risk Score", className="card-title mb-2", style={"color": "#a0a0a0", "fontWeight": "400"}),
+                        html.H2(id="risk-score", className="mb-0", style={"color": "#ffffff", "fontWeight": "700"}),
+                        html.Small(id="risk-severity", className="text-warning")
+                    ])
+                ], className="text-center")
+            ], className="h-100 border-0", style={
+                "background": "linear-gradient(135deg, rgba(255,107,107,0.12) 0%, rgba(255,107,107,0.05) 100%)",
+                "border": "1px solid rgba(255,107,107,0.3)",
+                "borderRadius": "15px"
+            })
+        ], width=6, className="mb-3"),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.Div([
+                        html.I(className="fas fa-heartbeat me-2", style={"color": "#ffd93d", "fontSize": "1.5rem"}),
+                        html.H6("Feed Health", className="card-title mb-2", style={"color": "#a0a0a0", "fontWeight": "400"}),
+                        html.H2(id="health-summary", className="mb-0", style={"color": "#ffffff", "fontWeight": "700"}),
+                        html.Small(id="health-subtitle", className="text-muted")
+                    ])
+                ], className="text-center")
+            ], className="h-100 border-0", style={
+                "background": "linear-gradient(135deg, rgba(255,217,61,0.12) 0%, rgba(255,217,61,0.05) 100%)",
+                "border": "1px solid rgba(255,217,61,0.3)",
+                "borderRadius": "15px"
+            })
+        ], width=6, className="mb-3")
+    ], className="mb-4"),
     
     # Enhanced Charts Row
     dbc.Row([
@@ -188,6 +255,47 @@ app.layout = dbc.Container([
                 ])
             ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
         ], width=4, className="mb-4")
+    ]),
+    
+    # Global Threat Map Row
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Global Threat Map", className="mb-0", style={"color": "#ffffff"}),
+                    html.I(className="fas fa-globe ms-2", style={"color": "#6bcf7f"})
+                ], className="border-0 bg-transparent"),
+                dbc.CardBody([
+                    dcc.Graph(id="threat-map", config={"displayModeBar": False})
+                ])
+            ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
+        ])
+    ], className="mb-4"),
+
+    # Global Attack Map and Historical Trends
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Global Attack Map", className="mb-0", style={"color": "#ffffff"}),
+                    html.I(className="fas fa-globe-africa ms-2", style={"color": "#00ff88"})
+                ], className="border-0 bg-transparent"),
+                dbc.CardBody([
+                    dcc.Graph(id="attack-map", config={"displayModeBar": False})
+                ])
+            ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
+        ], width=7, className="mb-4"),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Historical Threat Trends", className="mb-0", style={"color": "#ffffff"}),
+                    html.I(className="fas fa-wave-square ms-2", style={"color": "#ffd93d"})
+                ], className="border-0 bg-transparent"),
+                dbc.CardBody([
+                    dcc.Graph(id="history-chart", config={"displayModeBar": False})
+                ])
+            ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
+        ], width=5, className="mb-4")
     ]),
     
     # Enhanced Search Section
@@ -243,6 +351,86 @@ app.layout = dbc.Container([
         ])
     ], className="mb-4"),
     
+    # Top Risk Indicators Section
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.Div([
+                        html.H5("Top Risk Indicators", className="mb-0", style={"color": "#ffffff"}),
+                        html.I(className="fas fa-exclamation-triangle ms-2", style={"color": "#ff6b6b"})
+                    ], className="d-flex align-items-center"),
+                    html.Div([
+                        dbc.Button("Export JSON", id="export-json-btn", color="secondary", size="sm", className="ms-2"),
+                        dbc.Button("Export CSV", id="export-csv-btn", color="secondary", size="sm", className="ms-2")
+                    ], className="d-flex")
+                ], className="border-0 bg-transparent d-flex justify-content-between align-items-center"),
+                dbc.CardBody([
+                    html.Div(id="top-risk-indicators")
+                ])
+            ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
+        ])
+    ], className="mb-4"),
+
+    # Export and Top Lists
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("IOC Export", className="mb-0", style={"color": "#ffffff"}),
+                    html.I(className="fas fa-file-export ms-2", style={"color": "#6bcf7f"})
+                ], className="border-0 bg-transparent"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([dbc.Button("Export JSON", id="export-json", color="secondary", className="w-100")], width=4),
+                        dbc.Col([dbc.Button("Export CSV", id="export-csv", color="secondary", className="w-100")], width=4),
+                        dbc.Col([dbc.Button("Export STIX", id="export-stix", color="secondary", className="w-100")], width=4)
+                    ]),
+                    dcc.Download(id="download-ioc")
+                ])
+            ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
+        ])
+    ], className="mb-4"),
+
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Top Threat Lists", className="mb-0", style={"color": "#ffffff"}),
+                    html.I(className="fas fa-list-ol ms-2", style={"color": "#00ff88"})
+                ], className="border-0 bg-transparent"),
+                dbc.CardBody([
+                    html.Div(id="top-lists")
+                ])
+            ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
+        ], width=6, className="mb-4"),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Feed Health Details", className="mb-0", style={"color": "#ffffff"}),
+                    html.I(className="fas fa-heartbeat ms-2", style={"color": "#ffd93d"})
+                ], className="border-0 bg-transparent"),
+                dbc.CardBody([
+                    html.Div(id="feed-health")
+                ])
+            ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
+        ], width=6, className="mb-4")
+    ]),
+
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Threat Campaign Tags", className="mb-0", style={"color": "#ffffff"}),
+                    html.I(className="fas fa-tags ms-2", style={"color": "#ff6b6b"})
+                ], className="border-0 bg-transparent"),
+                dbc.CardBody([
+                    html.Div(id="campaign-tags")
+                ])
+            ], className="border-0", style={"background": "rgba(255,255,255,0.02)", "borderRadius": "15px"})
+        ])
+    ], className="mb-4"),
+    
     # Enhanced Source Status
     dbc.Row([
         dbc.Col([
@@ -259,7 +447,8 @@ app.layout = dbc.Container([
     ]),
     
     # Store component
-    dcc.Store(id='threat-data-store')
+    dcc.Store(id='threat-data-store'),
+    dcc.Download(id="download")
     
 ], fluid=True, style={"padding": "2rem", "backgroundColor": "#0a0a0a"})
 
@@ -340,6 +529,26 @@ def update_metrics(data):
         str(summary.get('active_campaigns', 0)),
         str(sources_count)
     )
+
+# Callback to update risk and health summary
+@app.callback(
+    [Output('risk-score', 'children'),
+     Output('risk-severity', 'children'),
+     Output('health-summary', 'children'),
+     Output('health-subtitle', 'children')],
+    [Input('threat-data-store', 'data')]
+)
+def update_risk_and_health(data):
+    if not data:
+        return "0", "Low", "0/0", "No feeds configured"
+    risk = data.get("risk", {})
+    score = risk.get("score", 0)
+    severity = risk.get("severity", "Low")
+    health = data.get("health", {})
+    online = len([h for h in health.values() if h.get("online") is True])
+    total = len(health)
+    subtitle = "All feeds healthy" if total > 0 and online == total else "Degraded or offline feeds"
+    return str(score), severity, f"{online}/{total}", subtitle
 
 # Callback to update alerts
 @app.callback(
@@ -688,6 +897,149 @@ def update_categories_chart(data):
     
     return fig
 
+# Callback to update attack map
+@app.callback(
+    Output('attack-map', 'figure'),
+    [Input('threat-data-store', 'data')]
+)
+def update_attack_map(data):
+    if not data:
+        return go.Figure()
+    country_counts = data.get("geo", {}).get("by_country", {})
+    locations = []
+    values = []
+    for iso2, count in country_counts.items():
+        iso3 = _iso2_to_iso3(iso2)
+        if iso3:
+            locations.append(iso3)
+            values.append(count)
+    if not locations:
+        return go.Figure()
+    fig = px.choropleth(
+        locations=locations,
+        color=values,
+        locationmode="ISO-3",
+        color_continuous_scale="Reds"
+    )
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#ffffff'),
+        margin=dict(t=20, b=20, l=20, r=20),
+        coloraxis_colorbar=dict(title="Threats")
+    )
+    return fig
+
+# Callback to update historical trends chart
+@app.callback(
+    Output('history-chart', 'figure'),
+    [Input('threat-data-store', 'data')]
+)
+def update_history_chart(data):
+    history = aggregator.get_history(7)
+    if not history:
+        return go.Figure()
+    dates = [h.get("timestamp", "")[:10] for h in history]
+    total = [h.get("total_threats", 0) for h in history]
+    high_risk = [h.get("high_risk_indicators", 0) for h in history]
+    campaigns = [h.get("active_campaigns", 0) for h in history]
+    risk_score = [h.get("risk_score", 0) for h in history]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=dates, y=total, mode='lines+markers', name='Total Threats', line=dict(color='#00ff88')))
+    fig.add_trace(go.Scatter(x=dates, y=high_risk, mode='lines+markers', name='High Risk', line=dict(color='#ff6b6b')))
+    fig.add_trace(go.Scatter(x=dates, y=campaigns, mode='lines+markers', name='Campaigns', line=dict(color='#ffd93d')))
+    fig.add_trace(go.Scatter(x=dates, y=risk_score, mode='lines+markers', name='Risk Score', line=dict(color='#6bcf7f')))
+
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#ffffff'),
+        margin=dict(t=20, b=20, l=20, r=20),
+        height=300,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color='#ffffff'))
+    )
+    return fig
+
+# Callback to update top lists
+@app.callback(
+    Output('top-lists', 'children'),
+    [Input('threat-data-store', 'data')]
+)
+def update_top_lists(data):
+    if not data:
+        return ""
+    top_lists = data.get("top_lists", {})
+    sections = []
+    label_map = {
+        "ip": "Top Malicious IPs",
+        "domain": "Top Malicious Domains",
+        "url": "Top Malicious URLs",
+        "hash": "Top Malware Hashes"
+    }
+    for key, label in label_map.items():
+        items = top_lists.get(key, [])
+        if not items:
+            list_items = [html.Li("No data available", className="text-muted")]
+        else:
+            list_items = [
+                html.Li(f"{item.get('value')} (Score: {item.get('score')}, Sources: {item.get('correlation_count')})")
+                for item in items
+            ]
+        sections.append(html.Div([
+            html.H6(label, className="text-white"),
+            html.Ul(list_items)
+        ], className="mb-3"))
+    return sections
+
+# Callback to update feed health table
+@app.callback(
+    Output('feed-health', 'children'),
+    [Input('threat-data-store', 'data')]
+)
+def update_feed_health(data):
+    if not data:
+        return ""
+    health = data.get("health", {})
+    rows = []
+    for source, info in health.items():
+        status = "Online" if info.get("online") else "Offline"
+        latency = info.get("response_ms")
+        latency_text = f"{latency} ms" if isinstance(latency, int) else "N/A"
+        rows.append(html.Tr([
+            html.Td(source.title()),
+            html.Td(status),
+            html.Td(latency_text),
+            html.Td(info.get("warning") or info.get("error") or "-")
+        ]))
+    return dbc.Table([
+        html.Thead(html.Tr([html.Th("Feed"), html.Th("Status"), html.Th("Latency"), html.Th("Notes")])),
+        html.Tbody(rows)
+    ], bordered=False, hover=True, responsive=True, className="text-white")
+
+# Callback to update campaign tags
+@app.callback(
+    Output('campaign-tags', 'children'),
+    [Input('threat-data-store', 'data')]
+)
+def update_campaign_tags(data):
+    if not data:
+        return ""
+    campaigns = data.get("campaigns", {})
+    tags = campaigns.get("top_tags", {})
+    authors = campaigns.get("top_authors", {})
+    recent = campaigns.get("recent_pulses", [])
+
+    tag_list = [html.Li(f"{tag} ({count})") for tag, count in tags.items()] or [html.Li("No tags available", className="text-muted")]
+    author_list = [html.Li(f"{author} ({count})") for author, count in authors.items()] or [html.Li("No authors available", className="text-muted")]
+    recent_list = [html.Li(f"{p.get('name')} ({p.get('indicators')} indicators)") for p in recent] or [html.Li("No recent pulses", className="text-muted")]
+
+    return html.Div([
+        html.Div([html.H6("Top Tags", className="text-white"), html.Ul(tag_list)], className="mb-3"),
+        html.Div([html.H6("Top Authors", className="text-white"), html.Ul(author_list)], className="mb-3"),
+        html.Div([html.H6("Recent Pulses", className="text-white"), html.Ul(recent_list)], className="mb-3")
+    ])
+
 # Callback for search functionality
 @app.callback(
     [Output('search-results', 'children'),
@@ -718,6 +1070,19 @@ def perform_search(search_clicks, clear_clicks, query, search_type):
         results = aggregator.search_indicators(query, search_type)
         
         result_cards = []
+
+        risk = results.get("risk", {})
+        result_cards.append(
+            dbc.Card([
+                dbc.CardBody([
+                    html.Div([
+                        html.I(className="fas fa-shield-virus me-2", style={"color": "#ff6b6b", "fontSize": "1.2rem"}),
+                        html.Strong("IOC Risk Score: "),
+                        html.Span(f"{risk.get('score', 0)} ({risk.get('severity', 'Low')})", className="text-muted")
+                    ])
+                ])
+            ], className="mb-3 border-0", style={"background": "rgba(255,107,107,0.08)", "borderRadius": "10px"})
+        )
         
         for source, data in results.get('results', {}).items():
             if 'error' in data:
@@ -853,6 +1218,90 @@ def perform_search(search_clicks, clear_clicks, query, search_type):
             f"Search error: {str(e)}"
         ], color="danger", className="mb-3"), dash.no_update
 
+# Callback to export IOCs
+@app.callback(
+    Output("download-ioc", "data"),
+    [Input("export-json", "n_clicks"),
+     Input("export-csv", "n_clicks"),
+     Input("export-stix", "n_clicks")],
+    [State("threat-data-store", "data")],
+    prevent_initial_call=True
+)
+def export_iocs(json_clicks, csv_clicks, stix_clicks, data):
+    if not data:
+        return dash.no_update
+    ctx = callback_context
+    if not ctx.triggered:
+        return dash.no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+    items = data.get("correlations", [])[:200]
+
+    if trigger == "export-json":
+        content = json.dumps(items, indent=2)
+        return dcc.send_string(content, "ioc_export.json")
+
+    if trigger == "export-csv":
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["type", "value", "score", "sources", "correlation_count", "last_seen"])
+        for item in items:
+            writer.writerow([
+                item.get("type"),
+                item.get("value"),
+                item.get("score"),
+                ",".join(item.get("sources", [])),
+                item.get("correlation_count"),
+                item.get("last_seen")
+            ])
+        return dcc.send_string(buffer.getvalue(), "ioc_export.csv")
+
+    if trigger == "export-stix":
+        def stix_pattern(ind):
+            ind_type = ind.get("type")
+            value = ind.get("value")
+            if ind_type == "ip":
+                return f"[ipv4-addr:value = '{value}']"
+            if ind_type == "domain":
+                return f"[domain-name:value = '{value}']"
+            if ind_type == "url":
+                return f"[url:value = '{value}']"
+            if ind_type == "hash":
+                if isinstance(value, str):
+                    if len(value) == 64:
+                        algo = "SHA-256"
+                    elif len(value) == 40:
+                        algo = "SHA-1"
+                    else:
+                        algo = "MD5"
+                    return f"[file:hashes.'{algo}' = '{value}']"
+            return None
+
+        now = datetime.utcnow().isoformat() + "Z"
+        objects = []
+        for ind in items:
+            pattern = stix_pattern(ind)
+            if not pattern:
+                continue
+            objects.append({
+                "type": "indicator",
+                "spec_version": "2.1",
+                "id": f"indicator--{uuid.uuid4()}",
+                "created": now,
+                "modified": now,
+                "name": f"{ind.get('type')}:{ind.get('value')}",
+                "pattern": pattern,
+                "pattern_type": "stix",
+                "confidence": min(100, int(ind.get("score", 0) or 0))
+            })
+        bundle = {
+            "type": "bundle",
+            "id": f"bundle--{uuid.uuid4()}",
+            "objects": objects
+        }
+        return dcc.send_string(json.dumps(bundle, indent=2), "ioc_export.stix.json")
+
+    return dash.no_update
+
 # Callback to update source status
 @app.callback(
     Output('source-status', 'children'),
@@ -944,5 +1393,139 @@ def update_source_status(data):
     
     return status_cards
 
-if __name__ == '__main__':
-    app.run_server(debug=True, host='0.0.0.0', port=8050)
+# Callback to update top risk indicators
+@app.callback(
+    Output('top-risk-indicators', 'children'),
+    [Input('threat-data-store', 'data')]
+)
+def update_top_risk_indicators(data):
+    if not data or not data.get('scored_indicators'):
+        return dbc.Alert([
+            html.I(className="fas fa-info-circle me-2"),
+            "No risk indicators available"
+        ], color="info", className="mb-3")
+    
+    top_indicators = data['scored_indicators'][:5]
+    indicator_cards = []
+    
+    for indicator in top_indicators:
+        color_map = {
+            "Critical": "#ff6b6b",
+            "High": "#ffd93d",
+            "Medium": "#00ff88",
+            "Low": "#6bcf7f"
+        }
+        
+        indicator_cards.append(
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        html.Div([
+                            html.I(className="fas fa-shield-alt me-2", style={"color": color_map.get(indicator['level'], "#6c757d")}),
+                            html.Strong(f"{indicator['color']} {indicator['level']} Risk"),
+                            html.Br(),
+                            html.Span(f"{indicator['type'].upper()}: {indicator['value']}", style={"fontSize": "0.9rem"}),
+                            html.Br(),
+                            html.Small(f"Score: {indicator['score']}/100 | Reports: {indicator.get('abuse_reports', 'N/A')} | Last Seen: {indicator.get('last_seen', 'N/A')[:10] if indicator.get('last_seen') else 'N/A'}", className="text-muted")
+                        ])
+                    ], className="p-3", style={"background": f"rgba({color_map.get(indicator['level'], '#6c757d')}, 0.1)", "borderRadius": "10px", "marginBottom": "10px"})
+                ])
+            ])
+        )
+    
+    return indicator_cards
+
+# Callback to update threat map
+@app.callback(
+    Output('threat-map', 'figure'),
+    [Input('threat-data-store', 'data')]
+)
+def update_threat_map(data):
+    if not data or not data.get('scored_indicators'):
+        return go.Figure()
+    
+    from collections import defaultdict
+    country_counts = defaultdict(int)
+    country_avg_score = defaultdict(list)
+    
+    for ind in data['scored_indicators']:
+        country = ind.get('country')
+        if country:
+            country_counts[country] += 1
+            country_avg_score[country].append(ind['score'])
+    
+    if not country_counts:
+        return go.Figure()
+    
+    countries = []
+    counts = []
+    avg_scores = []
+    
+    for country, count in country_counts.items():
+        countries.append(country)
+        counts.append(count)
+        avg_scores.append(sum(country_avg_score[country]) / len(country_avg_score[country]))
+    
+    # Use scatter_geo with size and color
+    fig = go.Figure(data=go.Scattergeo(
+        locations=countries,
+        locationmode='ISO-3',  # country codes
+        mode='markers',
+        marker=dict(
+            size=[c*3 + 10 for c in counts],  # scale size, min 10
+            color=avg_scores,
+            colorscale='RdYlGn_r',  # red for high, green for low
+            showscale=True,
+            colorbar=dict(title="Avg Risk Score", titleside="right")
+        ),
+        text=[f"{c}: {ct} threats, avg score {avg:.1f}" for c, ct, avg in zip(countries, counts, avg_scores)],
+        hoverinfo='text'
+    ))
+    
+    fig.update_layout(
+        title='Global Threat Distribution',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#ffffff'),
+        geo=dict(
+            showframe=False,
+            showcoastlines=True,
+            projection_type='natural earth',
+            bgcolor='rgba(0,0,0,0)',
+            showcountries=True,
+            countrycolor='rgba(255,255,255,0.1)'
+        ),
+        margin=dict(t=50, b=50, l=50, r=50)
+    )
+    
+    return fig
+
+# Callback for exporting data
+@app.callback(
+    Output("download", "data"),
+    [Input("export-json-btn", "n_clicks"), Input("export-csv-btn", "n_clicks")],
+    [State("threat-data-store", "data")],
+    prevent_initial_call=True
+)
+def export_data(json_clicks, csv_clicks, data):
+    ctx = callback_context
+    if not ctx.triggered:
+        return dash.no_update
+    
+    button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    
+    if not data or not data.get("scored_indicators"):
+        return dash.no_update
+    
+    if button_id == "export-json-btn":
+        return dict(content=json.dumps(data["scored_indicators"], indent=2), filename="threat_indicators.json")
+    elif button_id == "export-csv-btn":
+        output = io.StringIO()
+        if data["scored_indicators"]:
+            writer = csv.DictWriter(output, fieldnames=data["scored_indicators"][0].keys())
+            writer.writeheader()
+            writer.writerows(data["scored_indicators"])
+        return dict(content=output.getvalue(), filename="threat_indicators.csv")
+
+if __name__ == "__main__":
+    app.run_server(debug=True, host="0.0.0.0", port=8050)

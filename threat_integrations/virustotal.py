@@ -1,5 +1,6 @@
 import requests
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -173,3 +174,20 @@ class VirusTotalClient:
             
         except Exception as e:
             return {"error": str(e), "source": "VirusTotal"}
+
+    def test_connection(self) -> Dict:
+        test_url = "https://www.google.com"
+        try:
+            start_time = time.time()
+            response = requests.post(
+                f"{self.base_url}/url/report",
+                params={"apikey": self.api_key, "resource": test_url, "scan": 0},
+                timeout=15
+            )
+            response_time = time.time() - start_time
+            if response.status_code == 429:
+                return {"online": True, "warning": "rate_limited", "response_time": response_time}
+            response.raise_for_status()
+            return {"online": True, "response_time": response_time}
+        except requests.exceptions.RequestException as e:
+            return {"online": False, "error": str(e), "response_time": None}
