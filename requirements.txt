@@ -1,0 +1,13 @@
+flask
+requests
+python-dotenv
+plotly
+dash
+dash-bootstrap-components
+pandas
+numpy
+websocket-client
+gunicorn
+
+
+
